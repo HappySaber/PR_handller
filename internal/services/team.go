@@ -18,21 +18,20 @@ func (tm *TeamService) Create(Team *models.Team) error {
 	return nil
 }
 
-func (tm *TeamService) GetTeamMembers(Team *models.Team) ([]models.User, error) {
+func (tm *TeamService) GetTeamMembers(Team *models.Team) error {
 	//TODO написать sql query
 	query := "SELECT"
 	rows, err := database.DB.Query(query, Team.Name)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	TeamMembers := make([]models.User, 0)
 	for rows.Next() {
 		var TeamMember models.User
 		if err := rows.Scan(&TeamMember); err != nil {
-			return nil, err
+			return err
 		}
-		TeamMembers = append(TeamMembers, TeamMember)
+		Team.Members = append(Team.Members, TeamMember)
 	}
-	return TeamMembers, nil
+	return nil
 }
