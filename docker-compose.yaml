@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: golang:1.25
+    container_name: migrate
+    working_dir: /app
+    volumes:
+      - ./internal/migrations:/app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        go install github.com/pressly/goose/v3/cmd/goose@latest &&
+        goose -dir /app/migrations -allow-missing postgres 'postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable' up
+      "
+
+
+  app:
+    build: .
+    container_name: app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DOCKER_ENV: "true"
+      DB_HOST: postgres      
+      DB_PORT: 5432   
+      DB_DSN: postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
