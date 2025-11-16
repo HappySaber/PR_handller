@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS users(
-    id SERIAL PRIMARY KEY,
+    id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(64) NOT NULL,
     is_active BOOLEAN DEFAULT FALSE,
     team_id INT REFERENCES teams(id) on DELETE SET NULL

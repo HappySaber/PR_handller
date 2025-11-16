@@ -15,6 +15,11 @@ type PullRequestService struct {
 	PullRequest models.PullRequest
 }
 
+func NewPullRequestService() *PullRequestService {
+	return &PullRequestService{}
+
+}
+
 func (prs *PullRequestService) Create(PR *models.PullRequest) error {
 	var teamName string
 	query := "SELECT t.name FROM teams t LEFT JOIN users u ON  t.id = u.team_id WHERE u.id = $1"
@@ -23,8 +28,8 @@ func (prs *PullRequestService) Create(PR *models.PullRequest) error {
 	}
 
 	var TeamMembers []models.TeamMember
-	query = "SELECT u.id, u.name, u.is_active FROM users u LEFT JOIN teams t ON u.team_id = t.id WHERE t.name = $1"
-	rows, err := database.DB.Query(query, teamName)
+	query = "SELECT u.id, u.name, u.is_active FROM users u LEFT JOIN teams t ON u.team_id = t.id WHERE t.name = $1 AND u.id <> $2 AND u.is_active = true"
+	rows, err := database.DB.Query(query, teamName, PR.AuthorID)
 	if err != nil {
 		return err
 	}
@@ -48,15 +53,16 @@ func (prs *PullRequestService) Create(PR *models.PullRequest) error {
 		reviewerIDs = append(reviewerIDs, r.UserID)
 	}
 
-	query = "INSERT INTO pull_requests (title, author_id, status, reviewer_ids) VALUES ($1, $2, $3, $4) RETURNING id, created_at"
+	query = "INSERT INTO pull_requests (id, title, author_id, status, reviewer_ids) VALUES ($1, $2, $3, $4, $5) RETURNING created_at"
 
 	err = database.DB.QueryRow(
 		query,
+		PR.PullRequestID,
 		PR.PullRequestName,
 		PR.AuthorID,
 		"OPEN",
 		pq.Array(reviewerIDs),
-	).Scan(&PR.PullRequestID, &PR.CreatedAt)
+	).Scan(&PR.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -70,27 +76,109 @@ func (prs *PullRequestService) Create(PR *models.PullRequest) error {
 	return nil
 }
 
-func (prs *PullRequestService) Merge(PR *models.PullRequest) error {
-	query := "UPDATE pull_request SET status = 'MERGED', merged_at = NOW() WHERE id = $1 AND merged_at <> 'MERGED' RETURNING status, merged_at"
-	err := database.DB.QueryRow(query, PR.PullRequestID).Scan(&PR.Status, &PR.MergedAt)
+func (prs *PullRequestService) Merge(pullRequestID string) (*models.PullRequest, error) {
+
+	PR := &models.PullRequest{}
+	var reviewers pq.StringArray
+	query := `UPDATE pull_requests 
+			SET status = 'MERGED', merged_at = NOW() 
+			WHERE id = $1 AND status <> 'MERGED' 
+			RETURNING id, title, author_id, status, reviewer_ids, created_at, merged_at`
+	err := database.DB.QueryRow(query, pullRequestID).Scan(&PR.PullRequestID, &PR.PullRequestName, &PR.AuthorID, &PR.Status, &reviewers, &PR.CreatedAt, &PR.MergedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return PR, nil
 }
 
-func (prs *PullRequestService) Reassign() error {
-	query := "SELECT"
-	rows, err := database.DB.Query(query)
+func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullRequest, string, error) {
+	PR := &models.PullRequest{}
+	query := `SELECT id, title, author_id, status, reviewer_ids, created_at, merged_at
+			  FROM pull_requests
+			  WHERE id = $1`
+	var reviewers pq.StringArray
+	err := database.DB.QueryRow(query, prID).Scan(
+		&PR.PullRequestID,
+		&PR.PullRequestName,
+		&PR.AuthorID,
+		&PR.Status,
+		&reviewers,
+		&PR.CreatedAt,
+		&PR.MergedAt,
+	)
 	if err != nil {
-		return err
+		if err == sql.ErrNoRows {
+			return nil, "", fmt.Errorf(models.ErrNotFound)
+		}
+		return nil, "", err
+	}
+
+	if PR.Status == "MERGED" {
+		return nil, "", fmt.Errorf(models.ErrPRMerged)
+	}
+
+	found := false
+	for _, r := range reviewers {
+		if r == oldUserID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, "", fmt.Errorf(models.ErrNotAssigned)
+	}
+	var teamName string
+	query = `SELECT t.name 
+			 FROM teams t
+			 LEFT JOIN users u ON u.team_id = t.id
+			 WHERE u.id = $1`
+	if err := database.DB.QueryRow(query, PR.AuthorID).Scan(&teamName); err != nil {
+		return nil, "", fmt.Errorf(models.ErrNotFound)
+	}
+
+	rows, err := database.DB.Query(`
+		SELECT u.id
+		FROM users u
+		JOIN teams t ON u.team_id = t.id
+		WHERE t.name = $1 AND u.is_active = TRUE AND u.id <> $2 AND NOT u.id = ANY($3) AND u.id <> $4
+	`, teamName, oldUserID, pq.Array(reviewers), PR.AuthorID)
+	if err != nil {
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	return nil
+	candidates := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, "", err
+		}
+		candidates = append(candidates, id)
+	}
+
+	if len(candidates) == 0 {
+		return nil, "", fmt.Errorf(models.ErrNoCandidate)
+	}
+
+	newUser := candidates[0]
+	for i, r := range reviewers {
+		if r == oldUserID {
+			reviewers[i] = newUser
+			break
+		}
+	}
+
+	_, err = database.DB.Exec(`UPDATE pull_requests SET reviewer_ids = $1 WHERE id = $2`, pq.Array(reviewers), PR.PullRequestID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	PR.AssignedReviewers = reviewers
+
+	return PR, newUser, nil
 }
 
 func (prs *PullRequestService) сhooseReviewers(members []models.TeamMember) ([]models.TeamMember, error) {

@@ -1,28 +1,38 @@
 package services
 
 import (
+	"PR/internal/controllers/dto"
 	"PR/internal/database"
 	"PR/internal/models"
-	"errors"
+	"database/sql"
+
+	"github.com/lib/pq"
 )
 
 type UserService struct {
-	User models.User
 }
 
-func (us *UserService) SetIsActive(userID string, isActive bool) error {
-	query := "UPDATE users SET is_active = TRUE WHERE id = $1"
+func NewUserService() *UserService {
+	return &UserService{}
+}
 
-	res, err := database.DB.Exec(query, isActive, userID)
+func (us *UserService) SetIsActive(userID string, isActive bool) (*dto.UserResponse, error) {
+	query := `
+    UPDATE users u
+    SET is_active = $1
+    FROM teams t
+    WHERE u.id = $2 AND u.team_id = t.id
+    RETURNING u.id, u.name, u.is_active, t.name
+`
+	var resp dto.UserResponse
+	err := database.DB.QueryRow(query, isActive, userID).Scan(&resp.UserID, &resp.TeamName, &resp.IsActive, &resp.TeamName)
 	if err != nil {
-		return err
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
-		return errors.New("user not found")
-	}
-
-	return nil
+	return &resp, nil
 }
 
 func (us *UserService) GetReviews(userID string) ([]models.PullRequest, error) {
@@ -35,6 +45,7 @@ func (us *UserService) GetReviews(userID string) ([]models.PullRequest, error) {
 	defer rows.Close()
 
 	var reviews []models.PullRequest
+	var reviewers pq.StringArray
 	for rows.Next() {
 		var pr models.PullRequest
 		if err := rows.Scan(
@@ -42,12 +53,13 @@ func (us *UserService) GetReviews(userID string) ([]models.PullRequest, error) {
 			&pr.PullRequestName,
 			&pr.AuthorID,
 			&pr.Status,
-			&pr.AssignedReviewers,
+			&reviewers,
 			&pr.CreatedAt,
 			&pr.MergedAt,
 		); err != nil {
 			return nil, err
 		}
+		pr.AssignedReviewers = []string(reviewers)
 		reviews = append(reviews, pr)
 	}
 

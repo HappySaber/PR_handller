@@ -4,6 +4,7 @@ import (
 	"PR/internal/controllers/dto"
 	"PR/internal/models"
 	"PR/internal/services"
+	"database/sql"
 	"fmt"
 	"log/slog"
 
@@ -25,9 +26,9 @@ func NewTeamController(service *services.TeamService, log *slog.Logger) *TeamCon
 func (tc *TeamController) Create(c *gin.Context) {
 	var req dto.CreateTeamRequest
 	if err := c.ShouldBindBodyWithJSON(&req); err != nil {
-		message := fmt.Sprintf("invalid json: %v", err.Error())
-		tc.log.Error("invalid json", "error", message)
-		c.JSON(400, models.NewErrorResponce("INVALID_REQUEST", message))
+		message := fmt.Sprintf("invalid JSON: %v", err)
+		tc.log.Warn("CreateTeam: invalid request", slog.String("error", message))
+		c.JSON(400, models.NewErrorResponse(models.ErrInvalidReq, message))
 		return
 	}
 
@@ -45,31 +46,46 @@ func (tc *TeamController) Create(c *gin.Context) {
 	}
 
 	if err := tc.service.Create(&team); err != nil {
-		c.JSON(400, models.NewErrorResponce(models.ErrTeamExists, "team_name already exists"))
+		if err.Error() == "team exists" {
+			tc.log.Warn("CreateTeam: team already exists", slog.String("team_name", req.TeamName))
+			c.JSON(400, models.NewErrorResponse(models.ErrTeamExists, "team_name already exists"))
+			return
+		}
+		tc.log.Error("CreateTeam: failed to create team", slog.String("error", err.Error()))
+		c.JSON(500, models.NewErrorResponse(models.ErrInternal, "failed to create team"))
 		return
 	}
 
-	tc.log.Info("team created", "team", team.Name)
-	c.JSON(201, req)
+	tc.log.Info("CreateTeam: team created successfully", slog.String("team_name", req.TeamName))
+	c.JSON(201, gin.H{"team": team})
 }
 
 func (tc *TeamController) GetTeamMembers(c *gin.Context) {
-	teamName := c.Query("team_name")
-	if teamName == "" {
-		c.JSON(400, gin.H{"error": gin.H{
-			"code":    "INVALID_REQUEST",
-			"message": "team_name query parameter required",
-		}})
+	type GetTeamMembersRequest struct {
+		TeamName string `json:"team_name" binding:"required"`
+	}
+
+	var req GetTeamMembersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		message := "team_name is required in JSON body"
+		tc.log.Warn("GetTeamMembers: invalid request", slog.String("error", message))
+		c.JSON(400, models.NewErrorResponse(models.ErrInvalidReq, message))
 		return
 	}
-	team, err := tc.service.GetTeamMembers(teamName)
+
+	team, err := tc.service.GetTeamMembers(req.TeamName)
+	tc.log.Info("params from JSON", "team_name", req.TeamName)
 	if err != nil {
-		c.JSON(404, gin.H{"error": gin.H{
-			"code":    "NOT_FOUND",
-			"message": "team not found",
-		}})
+		if err == sql.ErrNoRows {
+			tc.log.Warn("GetTeamMembers: team not found", slog.String("team_name", req.TeamName))
+			c.JSON(404, models.NewErrorResponse(models.ErrNotFound, "team not found"))
+			return
+		}
+		tc.log.Error("GetTeamMembers: failed to fetch team members", slog.String("error", err.Error()))
+		c.JSON(500, models.NewErrorResponse(models.ErrInternal, "failed to fetch team members"))
 		return
 	}
+
 	resp := dto.TeamResponse{
 		TeamName: team.Name,
 		Members:  make([]dto.TeamMemberDTO, len(team.Members)),
@@ -83,6 +99,6 @@ func (tc *TeamController) GetTeamMembers(c *gin.Context) {
 		}
 	}
 
-	tc.log.Info("got team members", "team", team.Name)
-	c.JSON(200, resp)
+	tc.log.Info("GetTeamMembers: fetched team members successfully", slog.String("team_name", team.Name))
+	c.JSON(200, gin.H{"team": resp})
 }

@@ -1,7 +1,7 @@
 package models
 
 type User struct {
-	UserID   int
+	UserID   string
 	Username string
 	TeamName string
 	IsActive bool

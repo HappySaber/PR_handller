@@ -1,6 +1,8 @@
 package main
 
 import (
+	"PR/internal/database"
+	"PR/internal/routes"
 	"log/slog"
 	"os"
 
@@ -18,8 +20,11 @@ func main() {
 	godotenv.Load(".env")
 	log := setupLogger(os.Getenv("ENV"))
 	log.Info("starting PR application")
+	database.Init()
 	router := gin.New()
+	routes.Routes(router, log)
 	router.Run(":" + "8080")
+
 	log.Info("PR application started")
 }
 

@@ -1,11 +1,11 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS pull_requests(
-    id SERIAL PRIMARY KEY,
+    id VARCHAR(128) PRIMARY KEY,
     title VARCHAR(64) NOT NULL,
-    author_id INTEGER REFERENCES users(id),
+    author_id VARCHAR(64) REFERENCES users(id),
     status VARCHAR(16) NOT NULL CHECK (status IN('OPEN','MERGED')),
-    reviewer_ids INTEGER[] DEFAULT '{}',
+    reviewer_ids VARCHAR(64)[] DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     merged_at TIMESTAMPTZ
 );

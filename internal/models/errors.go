@@ -7,6 +7,8 @@ const (
 	ErrNotAssigned = "NOT_ASSIGNED"
 	ErrNoCandidate = "NO_CANDIDATE"
 	ErrNotFound    = "NOT_FOUND"
+	ErrInvalidReq  = "INVALID_REQUEST"
+	ErrInternal    = "INTERNAL_ERROR"
 )
 
 type Error struct {
@@ -14,12 +16,12 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-type ErrorResponce struct {
+type ErrorResponse struct {
 	Error Error `json:"error"`
 }
 
-func NewErrorResponce(code, message string) ErrorResponce {
-	return ErrorResponce{
+func NewErrorResponse(code, message string) ErrorResponse {
+	return ErrorResponse{
 		Error: Error{
 			Code:    code,
 			Message: message,
