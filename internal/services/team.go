@@ -5,6 +5,7 @@ import (
 	"PR/internal/models"
 	"database/sql"
 	"fmt"
+	"log"
 )
 
 type TeamService struct {
@@ -57,7 +58,13 @@ func (tm *TeamService) GetTeamMembers(teamName string) (*models.Team, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("failed to close rows:", err)
+		}
+	}()
+
 	team := &models.Team{
 		Name:    teamName,
 		Members: []models.TeamMember{},

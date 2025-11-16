@@ -9,7 +9,6 @@ import (
 )
 
 func Routes(r *gin.Engine, log *slog.Logger) {
-	// создаём сервисы и контроллеры прямо здесь
 	testS := services.NewTestUserService()
 	testC := controllers.NewTestUserController(testS, log)
 
@@ -22,29 +21,28 @@ func Routes(r *gin.Engine, log *slog.Logger) {
 	prS := services.NewPullRequestService()
 	prC := controllers.NewPullRequestController(prS, log)
 
-	// test
 	r.POST("/test/add", testC.CreateTestUsers)
 	r.DELETE("/test/add", testC.DeleteTestUsers)
 
-	// team
 	teams := r.Group("/team")
 	{
 		teams.POST("/add", teamC.Create)
 		teams.GET("/get", teamC.GetTeamMembers)
 	}
 
-	// users
 	users := r.Group("/users")
 	{
 		users.GET("/getReview", userC.GetReviews)
-		users.PUT("/setisactive", userC.SetIsActive)
+		users.PUT("/setIsActive", userC.SetIsActive)
 	}
 
-	// pull requests
-	prs := r.Group("/pull")
+	prs := r.Group("/pullRequest")
 	{
 		prs.POST("/create", prC.Create)
 		prs.PUT("/merge", prC.Merge)
 		prs.PUT("/reassign", prC.Reassign)
 	}
+
+	r.GET("/stats/reviews", userC.GetReviewStats)
+
 }

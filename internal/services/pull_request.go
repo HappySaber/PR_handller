@@ -5,8 +5,8 @@ import (
 	"PR/internal/models"
 	"database/sql"
 	"fmt"
+	"log"
 	"math/rand"
-	"time"
 
 	"github.com/lib/pq"
 )
@@ -20,20 +20,24 @@ func NewPullRequestService() *PullRequestService {
 
 }
 
-func (prs *PullRequestService) Create(PR *models.PullRequest) error {
+func (prs *PullRequestService) Create(pr *models.PullRequest) error {
 	var teamName string
 	query := "SELECT t.name FROM teams t LEFT JOIN users u ON  t.id = u.team_id WHERE u.id = $1"
-	if err := database.DB.QueryRow(query, PR.AuthorID).Scan(&teamName); err != nil {
+	if err := database.DB.QueryRow(query, pr.AuthorID).Scan(&teamName); err != nil {
 		return fmt.Errorf("author not found: %w", err)
 	}
 
 	var TeamMembers []models.TeamMember
 	query = "SELECT u.id, u.name, u.is_active FROM users u LEFT JOIN teams t ON u.team_id = t.id WHERE t.name = $1 AND u.id <> $2 AND u.is_active = true"
-	rows, err := database.DB.Query(query, teamName, PR.AuthorID)
+	rows, err := database.DB.Query(query, teamName, pr.AuthorID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("failed to close rows:", err)
+		}
+	}()
 
 	for rows.Next() {
 		var u models.TeamMember
@@ -57,57 +61,57 @@ func (prs *PullRequestService) Create(PR *models.PullRequest) error {
 
 	err = database.DB.QueryRow(
 		query,
-		PR.PullRequestID,
-		PR.PullRequestName,
-		PR.AuthorID,
+		pr.PullRequestID,
+		pr.PullRequestName,
+		pr.AuthorID,
 		"OPEN",
 		pq.Array(reviewerIDs),
-	).Scan(&PR.CreatedAt)
+	).Scan(&pr.CreatedAt)
 	if err != nil {
 		return err
 	}
 
-	PR.Status = "OPEN"
+	pr.Status = "OPEN"
 	assigned := make([]string, 0, len(reviewers))
 	for _, r := range reviewers {
 		assigned = append(assigned, r.UserID)
 	}
-	PR.AssignedReviewers = assigned
+	pr.AssignedReviewers = assigned
 	return nil
 }
 
 func (prs *PullRequestService) Merge(pullRequestID string) (*models.PullRequest, error) {
 
-	PR := &models.PullRequest{}
+	pr := &models.PullRequest{}
 	var reviewers pq.StringArray
 	query := `UPDATE pull_requests 
 			SET status = 'MERGED', merged_at = NOW() 
 			WHERE id = $1 AND status <> 'MERGED' 
 			RETURNING id, title, author_id, status, reviewer_ids, created_at, merged_at`
-	err := database.DB.QueryRow(query, pullRequestID).Scan(&PR.PullRequestID, &PR.PullRequestName, &PR.AuthorID, &PR.Status, &reviewers, &PR.CreatedAt, &PR.MergedAt)
+	err := database.DB.QueryRow(query, pullRequestID).Scan(&pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status, &reviewers, &pr.CreatedAt, &pr.MergedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return PR, nil
+	return pr, nil
 }
 
 func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullRequest, string, error) {
-	PR := &models.PullRequest{}
+	pr := &models.PullRequest{}
 	query := `SELECT id, title, author_id, status, reviewer_ids, created_at, merged_at
 			  FROM pull_requests
 			  WHERE id = $1`
 	var reviewers pq.StringArray
 	err := database.DB.QueryRow(query, prID).Scan(
-		&PR.PullRequestID,
-		&PR.PullRequestName,
-		&PR.AuthorID,
-		&PR.Status,
+		&pr.PullRequestID,
+		&pr.PullRequestName,
+		&pr.AuthorID,
+		&pr.Status,
 		&reviewers,
-		&PR.CreatedAt,
-		&PR.MergedAt,
+		&pr.CreatedAt,
+		&pr.MergedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -116,7 +120,7 @@ func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullReq
 		return nil, "", err
 	}
 
-	if PR.Status == "MERGED" {
+	if pr.Status == "MERGED" {
 		return nil, "", fmt.Errorf(models.ErrPRMerged)
 	}
 
@@ -135,7 +139,7 @@ func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullReq
 			 FROM teams t
 			 LEFT JOIN users u ON u.team_id = t.id
 			 WHERE u.id = $1`
-	if err := database.DB.QueryRow(query, PR.AuthorID).Scan(&teamName); err != nil {
+	if err := database.DB.QueryRow(query, pr.AuthorID).Scan(&teamName); err != nil {
 		return nil, "", fmt.Errorf(models.ErrNotFound)
 	}
 
@@ -144,11 +148,15 @@ func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullReq
 		FROM users u
 		JOIN teams t ON u.team_id = t.id
 		WHERE t.name = $1 AND u.is_active = TRUE AND u.id <> $2 AND NOT u.id = ANY($3) AND u.id <> $4
-	`, teamName, oldUserID, pq.Array(reviewers), PR.AuthorID)
+	`, teamName, oldUserID, pq.Array(reviewers), pr.AuthorID)
 	if err != nil {
 		return nil, "", err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("failed to close rows:", err)
+		}
+	}()
 
 	candidates := []string{}
 	for rows.Next() {
@@ -171,22 +179,20 @@ func (prs *PullRequestService) Reassign(prID, oldUserID string) (*models.PullReq
 		}
 	}
 
-	_, err = database.DB.Exec(`UPDATE pull_requests SET reviewer_ids = $1 WHERE id = $2`, pq.Array(reviewers), PR.PullRequestID)
+	_, err = database.DB.Exec(`UPDATE pull_requests SET reviewer_ids = $1 WHERE id = $2`, pq.Array(reviewers), pr.PullRequestID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	PR.AssignedReviewers = reviewers
+	pr.AssignedReviewers = reviewers
 
-	return PR, newUser, nil
+	return pr, newUser, nil
 }
 
 func (prs *PullRequestService) сhooseReviewers(members []models.TeamMember) ([]models.TeamMember, error) {
 	if len(members) <= 2 {
 		return members, nil
 	}
-
-	rand.Seed(time.Now().UnixNano())
 
 	shuffled := append([]models.TeamMember(nil), members...)
 

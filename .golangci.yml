@@ -1,0 +1,22 @@
+# .golangci.yml
+version: 2
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - migrations       
+    - vendor         
+
+linters:
+  enable:
+    - govet           
+    - staticcheck    
+    - errcheck        
+    - unused         
+    - gocritic        
+    - misspell        
+
+issues:
+  exclude-use-default: false
+  exclude:
+    - "Error return value.*not checked" 

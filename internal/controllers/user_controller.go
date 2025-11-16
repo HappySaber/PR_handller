@@ -79,3 +79,13 @@ func (uc *UserController) GetReviews(c *gin.Context) {
 		"pull_requests": reviews,
 	})
 }
+
+func (uc *UserController) GetReviewStats(c *gin.Context) {
+	stats, err := uc.service.GetReviewStats()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to fetch review stats"})
+		return
+	}
+
+	c.JSON(200, gin.H{"stats": stats})
+}

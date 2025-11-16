@@ -24,6 +24,7 @@ func NewTeamController(service *services.TeamService, log *slog.Logger) *TeamCon
 }
 
 func (tc *TeamController) Create(c *gin.Context) {
+
 	var req dto.CreateTeamRequest
 	if err := c.ShouldBindBodyWithJSON(&req); err != nil {
 		message := fmt.Sprintf("invalid JSON: %v", err)

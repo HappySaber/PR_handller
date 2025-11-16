@@ -39,15 +39,17 @@ func (tus *TestUserService) CreateTestUsers(count int) ([]models.User, error) {
 }
 
 func (tus *TestUserService) DeleteTestUsers() error {
-
 	for i := 1; i <= 8; i++ {
 		id := fmt.Sprintf("test_u%d", i)
-		query := `DELETE FROM users WHERE id = $1`
-		_, err := database.DB.Exec(query, id)
+		_, err := database.DB.Exec(`DELETE FROM pull_requests WHERE author_id = $1`, id)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to delete PRs for %s: %w", id, err)
+		}
+
+		_, err = database.DB.Exec(`DELETE FROM users WHERE id = $1`, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete user %s: %w", id, err)
 		}
 	}
-
 	return nil
 }

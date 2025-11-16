@@ -3,6 +3,7 @@ package main
 import (
 	"PR/internal/database"
 	"PR/internal/routes"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -17,13 +18,19 @@ const (
 )
 
 func main() {
-	godotenv.Load(".env")
+	if err := godotenv.Load(".env"); err != nil {
+		panic(fmt.Sprintf("failed to load .env: %v", err))
+	}
+
 	log := setupLogger(os.Getenv("ENV"))
 	log.Info("starting PR application")
 	database.Init()
 	router := gin.New()
 	routes.Routes(router, log)
-	router.Run(":" + "8080")
+	if err := router.Run(":" + "8080"); err != nil {
+		log.Error("failed to start server", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	log.Info("PR application started")
 }

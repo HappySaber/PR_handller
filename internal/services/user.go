@@ -5,6 +5,7 @@ import (
 	"PR/internal/database"
 	"PR/internal/models"
 	"database/sql"
+	"log"
 
 	"github.com/lib/pq"
 )
@@ -18,19 +19,32 @@ func NewUserService() *UserService {
 
 func (us *UserService) SetIsActive(userID string, isActive bool) (*dto.UserResponse, error) {
 	query := `
-    UPDATE users u
-    SET is_active = $1
-    FROM teams t
-    WHERE u.id = $2 AND u.team_id = t.id
-    RETURNING u.id, u.name, u.is_active, t.name
+			UPDATE users u
+			SET is_active = $1
+			FROM (
+				SELECT id, name
+				FROM teams
+			) t
+			WHERE u.id = $2
+			RETURNING u.id,
+					u.name,
+					u.is_active,
+					(SELECT name FROM teams WHERE id = u.team_id) AS team_name;
+
 `
 	var resp dto.UserResponse
-	err := database.DB.QueryRow(query, isActive, userID).Scan(&resp.UserID, &resp.TeamName, &resp.IsActive, &resp.TeamName)
+	var teamName sql.NullString
+	err := database.DB.QueryRow(query, isActive, userID).Scan(&resp.UserID, &resp.Username, &resp.IsActive, &teamName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
 		}
 		return nil, err
+	}
+
+	resp.TeamName = ""
+	if teamName.Valid {
+		resp.TeamName = teamName.String
 	}
 	return &resp, nil
 }
@@ -42,7 +56,11 @@ func (us *UserService) GetReviews(userID string) ([]models.PullRequest, error) {
 		return nil, err
 	}
 
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("failed to close rows:", err)
+		}
+	}()
 
 	var reviews []models.PullRequest
 	var reviewers pq.StringArray
@@ -64,4 +82,40 @@ func (us *UserService) GetReviews(userID string) ([]models.PullRequest, error) {
 	}
 
 	return reviews, nil
+}
+
+type ReviewStat struct {
+	ReviewerID  string `json:"reviewer_id"`
+	Assignments int    `json:"assignments"`
+}
+
+func (us *UserService) GetReviewStats() ([]ReviewStat, error) {
+	query := `
+        SELECT reviewer_id, COUNT(*) AS assignments
+        FROM pull_requests, unnest(reviewer_ids) AS reviewer_id
+        GROUP BY reviewer_id
+        ORDER BY assignments DESC
+    `
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("failed to close rows:", err)
+		}
+	}()
+
+	var stats []ReviewStat
+	for rows.Next() {
+		var s ReviewStat
+		if err := rows.Scan(&s.ReviewerID, &s.Assignments); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+
+	return stats, nil
 }

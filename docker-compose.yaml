@@ -16,6 +16,9 @@ services:
       timeout: 5s
       retries: 5
 
+
+
+
   migrate:
     image: golang:1.25
     container_name: migrate

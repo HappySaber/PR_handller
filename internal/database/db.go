@@ -63,20 +63,7 @@ func Init() {
 	log.Println("Successfully connected to the database!")
 }
 
-// func runMigrations(db *sql.DB) error {
-// 	migrationsDir := "internal/migrations"
-
-// 	log.Println("Running migrations with Goose...")
-// 	if err := goose.Up(db, migrationsDir); err != nil {
-// 		return fmt.Errorf("goose migration failed: %w", err)
-// 	}
-
-// 	log.Println("Goose migrations applied successfully")
-// 	return nil
-// }
-
 func isRunningInDocker() bool {
-	// Проверка наличия /.dockerenv
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true
 	}

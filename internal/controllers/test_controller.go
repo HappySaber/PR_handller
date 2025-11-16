@@ -5,6 +5,7 @@ import (
 	"PR/internal/services"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +23,13 @@ func NewTestUserController(service *services.TestUserService, log *slog.Logger) 
 }
 
 func (tuc *TestUserController) CreateTestUsers(c *gin.Context) {
+	if os.Getenv("ENV") != "local" {
+		message := "Can be done only in local"
+		tuc.log.Error("CreateTestUsers: invalid request", slog.String("error", message))
+		c.JSON(400, models.NewErrorResponse(models.ErrInvalidReq, message))
+		return
+	}
+
 	users, err := tuc.service.CreateTestUsers(8)
 	if err != nil {
 		tuc.log.Error("failed to create test users", "error", err)
@@ -34,6 +42,12 @@ func (tuc *TestUserController) CreateTestUsers(c *gin.Context) {
 }
 
 func (tuc *TestUserController) DeleteTestUsers(c *gin.Context) {
+	if os.Getenv("ENV") != "local" {
+		message := "Can be done only in local"
+		tuc.log.Error("DeleteTestUsers: invalid request", slog.String("error", message))
+		c.JSON(400, models.NewErrorResponse(models.ErrInvalidReq, message))
+		return
+	}
 	if err := tuc.service.DeleteTestUsers(); err != nil {
 		tuc.log.Error("failed to delete test users", "error", err)
 		c.JSON(http.StatusInternalServerError, models.NewErrorResponse("INTERNAL_ERROR", "failed to delete test users"))
