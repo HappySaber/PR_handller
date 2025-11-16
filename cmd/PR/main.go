@@ -20,6 +20,7 @@ func main() {
 	log.Info("starting PR application")
 	router := gin.New()
 	router.Run(":" + "8080")
+	log.Info("PR application started")
 }
 
 func setupLogger(env string) *slog.Logger {

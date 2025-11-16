@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE users IF NOT EXISTS(
+CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     name VARCHAR(64) NOT NULL,
     is_active BOOLEAN DEFAULT FALSE,

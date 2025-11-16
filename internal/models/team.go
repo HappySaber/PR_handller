@@ -1,6 +1,12 @@
 package models
 
 type Team struct {
-	Name    string `json:"name,omitempty"`
-	Members []User `json:"members,omitempty"`
+	Name    string
+	Members []TeamMembers
+}
+
+type TeamMembers struct {
+	UserID   string
+	Username string
+	IsActive bool
 }
