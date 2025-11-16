@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"PR/internal/controllers/dto"
 	"PR/internal/models"
 	"PR/internal/services"
 	"fmt"
@@ -22,35 +23,66 @@ func NewTeamController(service *services.TeamService, log *slog.Logger) *TeamCon
 }
 
 func (tc *TeamController) Create(c *gin.Context) {
-	var team models.Team
-	if err := c.ShouldBindBodyWithJSON(&team); err != nil {
+	var req dto.CreateTeamRequest
+	if err := c.ShouldBindBodyWithJSON(&req); err != nil {
 		message := fmt.Sprintf("invalid json: %v", err.Error())
 		tc.log.Error("invalid json", "error", message)
 		c.JSON(400, models.NewErrorResponce("INVALID_REQUEST", message))
 		return
 	}
+
+	team := models.Team{
+		Name:    req.TeamName,
+		Members: make([]models.TeamMember, len(req.Members)),
+	}
+
+	for i, m := range req.Members {
+		team.Members[i] = models.TeamMember{
+			UserID:   m.UserID,
+			Username: m.Username,
+			IsActive: m.IsActive,
+		}
+	}
+
 	if err := tc.service.Create(&team); err != nil {
 		c.JSON(400, models.NewErrorResponce(models.ErrTeamExists, "team_name already exists"))
 		return
 	}
+
 	tc.log.Info("team created", "team", team.Name)
-	c.JSON(201, team)
+	c.JSON(201, req)
 }
 
 func (tc *TeamController) GetTeamMembers(c *gin.Context) {
-	var team models.Team
-
-	if err := c.ShouldBindJSON(&team); err != nil {
-		message := fmt.Sprintf("invalid json: %v", err.Error())
-		tc.log.Error("invalid json", "error", message)
-		c.JSON(400, models.NewErrorResponce("INVALID_REQUEST", message))
+	teamName := c.Query("team_name")
+	if teamName == "" {
+		c.JSON(400, gin.H{"error": gin.H{
+			"code":    "INVALID_REQUEST",
+			"message": "team_name query parameter required",
+		}})
 		return
 	}
-
-	if err := tc.service.GetTeamMembers(&team); err != nil {
-		c.JSON(404, models.NewErrorResponce(models.ErrNotFound, "team did not found"))
+	team, err := tc.service.GetTeamMembers(teamName)
+	if err != nil {
+		c.JSON(404, gin.H{"error": gin.H{
+			"code":    "NOT_FOUND",
+			"message": "team not found",
+		}})
 		return
 	}
-	tc.log.Info("got team members", "team", team.Name, "team members", team.Members)
-	c.JSON(200, team)
+	resp := dto.TeamResponse{
+		TeamName: team.Name,
+		Members:  make([]dto.TeamMemberDTO, len(team.Members)),
+	}
+
+	for i, m := range team.Members {
+		resp.Members[i] = dto.TeamMemberDTO{
+			UserID:   m.UserID,
+			Username: m.Username,
+			IsActive: m.IsActive,
+		}
+	}
+
+	tc.log.Info("got team members", "team", team.Name)
+	c.JSON(200, resp)
 }

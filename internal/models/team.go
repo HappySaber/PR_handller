@@ -2,10 +2,10 @@ package models
 
 type Team struct {
 	Name    string
-	Members []TeamMembers
+	Members []TeamMember
 }
 
-type TeamMembers struct {
+type TeamMember struct {
 	UserID   string
 	Username string
 	IsActive bool
