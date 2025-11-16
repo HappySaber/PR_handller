@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"PR/internal/controllers/dto"
 	"PR/internal/models"
 	"PR/internal/services"
 	"fmt"
@@ -22,25 +23,46 @@ func NewUserController(service services.UserService, log *slog.Logger) *UserCont
 }
 
 func (uc *UserController) SetIsActive(c *gin.Context) {
-	type SetIsActiveRequest struct {
-		UserID   string `json:"user_id" binding:"required"`
-		IsActive bool   `json:"is_active" binding:"required"`
-	}
+	var req dto.SetIsActiveRequest
 
-	var req SetIsActiveRequest
-	if err := c.ShouldBindBodyWithJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		message := fmt.Sprintf("invalid json: %v", err.Error())
 		uc.log.Error("invalid json", "error", message)
 		c.JSON(400, models.NewErrorResponce("INVALID_REQUEST", message))
 		return
 	}
-
-	err := uc.service.SetIsActive()
+	err := uc.service.SetIsActive(req.UserID, req.IsActive)
 	if err != nil {
-		uc.log.Error("failed to set is_active", "error", err)
+		if err.Error() == "user not found" {
+			c.JSON(404, models.NewErrorResponce("NOT_FOUND", "user not found"))
+			return
+		}
+
+		uc.log.Error("failed to update user", "error", err)
 		c.JSON(500, models.NewErrorResponce("INTERNAL_ERROR", "failed to update"))
 		return
 	}
 
+	uc.log.Info("user updated", "id", req.UserID, "is_active", req.IsActive)
+
 	c.JSON(200, gin.H{"message": "updated"})
+}
+
+func (uc *UserController) GetReviews(c *gin.Context) {
+	userID := c.Query("user_id")
+	if userID == "" {
+		c.JSON(400, models.NewErrorResponce("INVALID_REQUEST", "missing user_id"))
+		return
+	}
+
+	reviews, err := uc.service.GetReviews(userID)
+	if err != nil {
+		c.JSON(500, models.NewErrorResponce("INTERNAL_ERROR", "failed to fetch pull requests"))
+		return
+	}
+	uc.log.Info("fetched user reviews", "user_id", userID, "reviews_count", len(reviews))
+	c.JSON(200, gin.H{
+		"user_id":       userID,
+		"pull_requests": reviews,
+	})
 }
