@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:13
-    container_name: postgres
+    container_name: postgres_pr
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -21,7 +21,7 @@ services:
 
   migrate:
     image: golang:1.25
-    container_name: migrate
+    container_name: migrate_pr
     working_dir: /app
     volumes:
       - ./internal/migrations:/app/migrations
@@ -37,7 +37,7 @@ services:
 
   app:
     build: .
-    container_name: app
+    container_name: app_pr
     ports:
       - "8080:8080"
     env_file:
